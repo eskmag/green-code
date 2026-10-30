@@ -1,0 +1,23 @@
+[Unit]
+Description=green-code måleworker
+After=network-online.target greencode-rapl.service
+Wants=network-online.target
+Requires=greencode-rapl.service
+
+[Service]
+User=greencode
+Group=greencode
+EnvironmentFile=/etc/greencode/worker.env
+Environment=HOME=/tmp
+ExecStart=/opt/greencode/venv/bin/greencode-worker run
+Restart=on-failure
+RestartSec=30
+# Workeren kjører fremmed kode. Begrens hva den kan røre.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/tmp
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>green-code</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{--bg:#f4f6f5;--paper:#fff;--ink:#16232a;--muted:#56656c;--line:#cdd6d6;--accent:#3d6a8c;--energy:#7a4a0c;--energy-bg:#f8ecd9;--ok:#24452a;--ok-bg:#e6f0e6;--bad:#8a2c14;--bad-bg:#fbe3dc;
+--display:"Bricolage Grotesque",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#11181b;--paper:#172126;--ink:#e3eaec;--muted:#97a6ab;--line:#2c3a40;--accent:#6f9dbf;--energy:#e3a24b;--energy-bg:#33261a;--ok:#d3ead4;--ok-bg:#1b2e1e;--bad:#f3c2b5;--bad-bg:#3a1f18;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:28px 16px 64px;display:flex;flex-direction:column;gap:24px}
+h1{font:700 32px var(--display);margin:0}
+h2{font:700 19px var(--display);margin:0 0 12px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:18px 20px}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+input{font:14px var(--mono);padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);min-width:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+button{font:600 14px "IBM Plex Sans",sans-serif;background:var(--ink);color:var(--bg);border:0;border-radius:6px;padding:11px 18px;min-height:44px;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:14px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.chip{font:600 12px "IBM Plex Sans",sans-serif;padding:2px 8px;border-radius:4px;white-space:nowrap}
+.queued,.running{background:var(--energy-bg);color:var(--energy)}.done{background:var(--ok-bg);color:var(--ok)}.failed{background:var(--bad-bg);color:var(--bad)}
+.muted{color:var(--muted);font-size:13px}
+.err{color:var(--bad);font-size:13px;min-height:1em}
+code{font:12.5px var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>green-code</h1>
+    <p class="muted">Energi og CO₂ for kode, målt på ekte maskinvare.</p>
+  </header>
+
+  <section class="card">
+    <h2>Tilgang</h2>
+    <div class="row">
+      <label style="flex:1 1 320px">Admin-token
+        <input id="token" type="password" autocomplete="off" placeholder="ADMIN_TOKEN fra Vercel">
+      </label>
+      <button id="save" type="button">Lagre og last inn</button>
+    </div>
+    <p class="err" id="authErr"></p>
+  </section>
+
+  <section class="card">
+    <h2>Ny analyse</h2>
+    <form id="form" class="grid">
+      <label>Repo (https)<input id="repo" required placeholder="https://github.com/bruker/repo"></label>
+      <label>Gren eller tag<input id="ref" value="main"></label>
+      <label>Oppsett (måles ikke)<input id="setup" placeholder="pip install -r requirements.txt"></label>
+      <label>Kommando som måles<input id="command" required placeholder="python bench.py"></label>
+      <label>Antall kjøringer<input id="iter" type="number" min="1" max="50" value="10"></label>
+      <div class="row"><button type="submit">Legg i kø</button></div>
+    </form>
+    <p class="err" id="formErr"></p>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0">Analyser</h2>
+      <button class="ghost" id="reload" type="button">Oppdater</button>
+    </div>
+    <div class="tbl"><table>
+      <thead><tr><th>#</th><th>Repo</th><th>Status</th><th>Energi</th><th>Tid</th><th>CO₂</th><th>Spredning</th><th>Backend</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="8" class="muted">Skriv inn tokenet for å se analysene.</td></tr></tbody>
+    </table></div>
+  </section>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let token = "";
+try { token = localStorage.getItem("gc_token") || ""; } catch (e) {}
+$("token").value = token;
+const statusText = {queued:"I kø", running:"Kjører", done:"Ferdig", failed:"Feilet"};
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {...opts, headers: {"Content-Type":"application/json", Authorization:`Bearer ${token}`}});
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(typeof b.detail === "string" ? b.detail : `Feil ${res.status}`); }
+  return res.status === 204 ? null : res.json();
+}
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = (v, d, unit) => v == null ? "–" : `${Number(v).toLocaleString("nb-NO",{maximumFractionDigits:d})} ${unit}`;
+
+async function load() {
+  $("authErr").textContent = "";
+  if (!token) return;
+  try {
+    const list = await api("/api/v1/analyses");
+    $("rows").innerHTML = list.length ? list.map(a => {
+      const s = a.summary || {};
+      const repo = a.repo_url.replace("https://github.com/", "");
+      return `<tr><td class="num">${a.id}</td>
+        <td><div>${esc(repo)}@${esc(a.ref)}</div><code class="muted">${esc(a.command)}</code>${a.error ? `<div class="err">${esc(a.error.slice(0,200))}</div>` : ""}</td>
+        <td><span class="chip ${a.status}">${statusText[a.status]}</span></td>
+        <td class="num">${fmt(s.joules_net_median,1,"J")}</td>
+        <td class="num">${fmt(s.seconds_median,3,"s")}</td>
+        <td class="num">${fmt(s.co2_mg,3,"mg")}</td>
+        <td class="num">${s.spread_pct == null ? "–" : "±" + fmt(s.spread_pct,1,"%")}</td>
+        <td class="num">${esc(a.backend || "–")}</td></tr>`;
+    }).join("") : `<tr><td colspan="8" class="muted">Ingen analyser ennå. Legg inn den første over.</td></tr>`;
+  } catch (e) { $("authErr").textContent = e.message; }
+}
+
+$("save").onclick = () => { token = $("token").value.trim(); try { localStorage.setItem("gc_token", token); } catch (e) {} load(); };
+$("reload").onclick = load;
+$("form").onsubmit = async ev => {
+  ev.preventDefault(); $("formErr").textContent = "";
+  try {
+    await api("/api/v1/analyses", {method:"POST", body: JSON.stringify({
+      repo_url: $("repo").value.trim(), ref: $("ref").value.trim() || "main",
+      setup: $("setup").value.trim() || null, command: $("command").value.trim(),
+      iterations: Number($("iter").value) || 10})});
+    load();
+  } catch (e) { $("formErr").textContent = e.message; }
+};
+load();
+setInterval(() => { if (token && !document.hidden) load(); }, 15000);
+</script>
+</body>
+</html>

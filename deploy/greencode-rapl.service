@@ -1,0 +1,14 @@
+# Gjør RAPL-tellerne lesbare for gruppen "greencode" ved oppstart.
+# Siden 2020 kan bare root lese energy_uj (Platypus-sårbarheten).
+# På en dedikert målemaskin er det greit å åpne for én gruppe.
+[Unit]
+Description=Gi greencode-gruppen lesetilgang til RAPL
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'for f in /sys/class/powercap/intel-rapl:*/energy_uj /sys/class/powercap/intel-rapl:*/*/energy_uj; do [ -e "$f" ] && chgrp greencode "$f" && chmod g+r "$f"; done; true'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
