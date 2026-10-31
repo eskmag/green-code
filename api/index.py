@@ -52,6 +52,10 @@ CREATE TABLE IF NOT EXISTS analyses (
 );
 CREATE INDEX IF NOT EXISTS analyses_queue_idx
     ON analyses (created_at) WHERE status = 'queued';
+CREATE TABLE IF NOT EXISTS workers (
+    worker_id    TEXT PRIMARY KEY,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 app = FastAPI(title="green-code", version="0.1.0", docs_url="/api/docs",
@@ -193,12 +197,34 @@ def get_analysis(analysis_id: int) -> dict[str, Any]:
     return row
 
 
+@app.get("/api/v1/workers", dependencies=[Depends(require_admin)])
+def list_workers() -> list[dict[str, Any]]:
+    with db() as conn:
+        return conn.execute(
+            "SELECT worker_id, last_seen_at, "
+            "round(extract(epoch FROM now() - last_seen_at)::numeric, 1)::float "
+            "AS seconds_since_seen FROM workers ORDER BY last_seen_at DESC"
+        ).fetchall()
+
+
 @app.post("/api/v1/worker/claim", dependencies=[Depends(require_worker)],
           response_model=None)
 def claim_job(body: ClaimIn) -> Response | dict[str, Any]:
     """Gir workeren den eldste ventende jobben. SKIP LOCKED gjør at flere
-    workere kan spørre samtidig uten å få samme jobb."""
+    workere kan spørre samtidig uten å få samme jobb.
+
+    Hvert kall er også et livstegn fra workeren. Jobber som har stått i
+    'running' i over en time antas å høre til en død worker og settes tilbake i kø."""
     with db() as conn:
+        conn.execute(
+            "INSERT INTO workers (worker_id, last_seen_at) VALUES (%s, now()) "
+            "ON CONFLICT (worker_id) DO UPDATE SET last_seen_at = now()",
+            (body.worker_id,),
+        )
+        conn.execute(
+            "UPDATE analyses SET status = 'queued', worker_id = NULL, started_at = NULL "
+            "WHERE status = 'running' AND started_at < now() - interval '1 hour'"
+        )
         row = conn.execute(
             """
             UPDATE analyses

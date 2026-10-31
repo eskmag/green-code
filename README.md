@@ -31,12 +31,24 @@ Dashboard / CLI ──► Vercel (FastAPI) ──► Neon Postgres
 | POST | `/api/v1/analyses` | admin |
 | GET | `/api/v1/analyses` | admin |
 | GET | `/api/v1/analyses/{id}` | admin |
+| GET | `/api/v1/workers` | admin |
 | POST | `/api/v1/worker/claim` | worker |
 | POST | `/api/v1/worker/analyses/{id}/result` | worker |
 
 Interaktiv dokumentasjon ligger på `/api/docs`.
 
 Jobbkøen er tabellen `analyses`. `claim` bruker `FOR UPDATE SKIP LOCKED`, så flere workere kan spørre samtidig uten å få samme jobb. Tabellene opprettes automatisk ved første forespørsel.
+
+Hvert `claim`-kall er også et livstegn: det oppdaterer `workers.last_seen_at`, og dashboardet viser tiden siden sist. Jobber som har stått i `running` i over en time settes tilbake i kø ved neste `claim`. Workeren spør ikke mens den måler, så et lengre opphold i livstegn kan være en pågående måling.
+
+## API-tester
+
+Testene kjører mot ekte Postgres og tømmer tabellene, så pek `DATABASE_URL` på en lokal testdatabase (aldri produksjon):
+
+```bash
+pip install -r requirements-dev.txt
+DATABASE_URL=postgresql://postgres@localhost:5432/postgres pytest tests
+```
 
 ## Oppsett på Vercel
 

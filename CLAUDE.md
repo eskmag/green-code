@@ -27,6 +27,10 @@ deploy/                       systemd-filer og env-eksempel for laptopen
 # Worker-tester
 cd worker && pip install -e '.[dev]' && pytest
 
+# API-tester (ekte Postgres, tømmer tabellene; aldri mot produksjon)
+pip install -r requirements-dev.txt
+DATABASE_URL=postgresql://postgres@localhost:5432/postgres pytest tests
+
 # API lokalt (krever Postgres)
 pip install -r requirements.txt uvicorn
 DATABASE_URL=postgresql://postgres@localhost:5432/postgres ADMIN_TOKEN=adm WORKER_TOKEN=wrk \
