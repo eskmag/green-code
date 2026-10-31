@@ -69,6 +69,7 @@ code{font:12.5px var(--mono)}
       <h2 style="margin:0">Analyser</h2>
       <button class="ghost" id="reload" type="button">Oppdater</button>
     </div>
+    <p class="muted" id="workerStatus"></p>
     <div class="tbl"><table>
       <thead><tr><th>#</th><th>Repo</th><th>Status</th><th>Energi</th><th>Tid</th><th>CO₂</th><th>Spredning</th><th>Backend</th></tr></thead>
       <tbody id="rows"><tr><td colspan="8" class="muted">Skriv inn tokenet for å se analysene.</td></tr></tbody>
@@ -90,10 +91,21 @@ async function api(path, opts = {}) {
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt = (v, d, unit) => v == null ? "–" : `${Number(v).toLocaleString("nb-NO",{maximumFractionDigits:d})} ${unit}`;
 
+const ago = s => s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s/60)} min` : `${Math.round(s/3600)} t`;
+
+async function loadWorkers() {
+  const el = $("workerStatus");
+  const ws = await api("/api/v1/workers");
+  if (!ws.length) { el.textContent = "Ingen worker har meldt seg ennå. Jobber blir stående i kø til en worker starter."; return; }
+  el.textContent = ws.map(w => `${w.worker_id}: ${w.seconds_since_seen < 120 ? "aktiv" : "stille"}, sist sett for ${ago(w.seconds_since_seen)} siden`).join(" · ")
+    + (ws.every(w => w.seconds_since_seen >= 120) ? ". Workeren spør ikke mens den måler, så et lengre opphold kan bety en pågående måling. Ellers: sjekk at tjenesten kjører på laptopen." : "");
+}
+
 async function load() {
   $("authErr").textContent = "";
   if (!token) return;
   try {
+    await loadWorkers();
     const list = await api("/api/v1/analyses");
     $("rows").innerHTML = list.length ? list.map(a => {
       const s = a.summary || {};
