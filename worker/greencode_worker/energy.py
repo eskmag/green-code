@@ -27,9 +27,10 @@ class EnergyBackend(Protocol):
 
 
 class RaplBackend:
-    """Leser energitellerne i /sys/class/powercap. Summerer alle
-    prosessorpakker (intel-rapl:0, intel-rapl:1 …), ikke underdomenene,
-    siden de allerede inngår i pakken."""
+    """Leser energitellerne i /sys/class/powercap. Summerer bare
+    prosessorpakkene (domener som heter package-N). Underdomenene (core,
+    uncore, dram) inngår allerede i pakken, og psys dekker hele plattformen
+    inkludert pakken, så de ville gitt dobbelttelling."""
 
     name = "rapl"
     precision = "counter"
@@ -37,7 +38,8 @@ class RaplBackend:
     def __init__(self, base: Path = Path("/sys/class/powercap")) -> None:
         self.base = base
         self.domains = sorted(
-            d for d in base.glob("intel-rapl:*") if d.name.count(":") == 1
+            d for d in base.glob("intel-rapl:*")
+            if d.name.count(":") == 1 and self._domain_name(d).startswith("package")
         )
         self._t0 = 0.0
         self._e0: dict[Path, int] = {}
@@ -49,6 +51,13 @@ class RaplBackend:
             )
         except (PermissionError, OSError, ValueError):
             return False
+
+    @staticmethod
+    def _domain_name(domain: Path) -> str:
+        try:
+            return (domain / "name").read_text().strip()
+        except OSError:
+            return ""
 
     @staticmethod
     def _read_one(domain: Path) -> int:
